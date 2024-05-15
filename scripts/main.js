@@ -3,14 +3,21 @@ import * as FirefoxZoom from "./firefoxZoom.js";
 import * as DefaultZoom from "./defaultZoom.js";
 import {setupCompatibility} from "./compatibility.js";
 import {hideCanvas} from "./canvasHider.js";
+import {dnd5eReadyHook, dnd5eEditSlider} from "./system/dnd5e.js";
+import {getLastActorId, saveLastActorId} from "./actorStorage.js";
+import {i18n} from "./utils.js";
 
 /* global game, canvas, Hooks, CONFIG, foundry */
 
 CONFIG.debug.hooks = false;
 
+/** @type {FormApplication|null} */
 let currentSheet = null; // Track the currently open sheet
 export let currentActor; // The currently selected actor
 
+/* ************************************* */
+/* *************** HOOKS *************** */
+/* ************************************* */
 Hooks.on('setup', async () => {
     if (!isSheetOnly()) {
         return;
@@ -34,45 +41,59 @@ Hooks.once('ready', async function () {
     hideUnusedElements();
 
     addEventListener("resize", onResize);
+
+    dnd5eReadyHook();
 });
 
-Hooks.on('renderActorSheet', async (app) => {
+
+Hooks.on('renderActorSheet',
+    /** @param {FormApplication|null} app */
+    async (app) => {
+        if (!isSheetOnly()) {
+            return;
+        }
+
+        app?.setPosition({
+            left: 0,
+            top: 0,
+            width: window.innerWidth,
+            height: window.innerHeight
+        });
+
+        app.element.addClass('sheet-only-sheet');
+
+        dnd5eEditSlider();
+
+        $(".window-resizable-handle").hide();
+
+        getTokenizerImage();
+    })
+
+
+Hooks.on('createActor', async function (actor) {
     if (!isSheetOnly()) {
         return;
     }
 
-    app.setPosition({
-        left: 0,
-        top: 0,
-        width: window.innerWidth,
-        height: window.innerHeight
-    });
-
-    app.element.addClass('sheet-only-sheet');
-
-    const shouldMoveDOM = false
-    if (shouldMoveDOM) {
-        const parent = $('.sheet-only-container');
-        parent.append(app.element);
-    }
-
-    $(".window-resizable-handle").hide();
-
-    getTokenizerImage();
-})
-
-
-Hooks.on('createActor', async function (actor) {
-    rebuildActorList();
-
     if (isActorOwnedByUser(actor)) {
+        rebuildActorList();
         switchToActor(actor);
     }
 });
 
-Hooks.on('deleteActor', async function () {
-    rebuildActorList();
-    popupSheet()
+Hooks.on('deleteActor', async function (actor) {
+    if (!isSheetOnly()) {
+        return;
+    }
+
+    if (isActorOwnedByUser(actor)) {
+        rebuildActorList();
+
+        if(actor === currentActor){
+            // We need to pop up the sheet for another character the user owns
+            popupSheet()
+        }
+    }
 });
 
 Hooks.on('renderContainerSheet', async (app, html) => {
@@ -89,6 +110,10 @@ Hooks.once('closeUserConfig', async () => {
     // Popup sheet after user selected their character
     popupSheet()
 });
+
+/* ************************************* */
+/* ************************************* */
+/* ************************************* */
 
 async function setupClient() {
     disableSounds();
@@ -123,6 +148,10 @@ function isActorOwnedByUser(actor) {
 
 }
 
+/**
+ *
+ * @param {Actor} actor
+ */
 function switchToActor(actor) {
     currentSheet?.close();
 
@@ -132,6 +161,7 @@ function switchToActor(actor) {
     currentSheet.render(true);
 
     setCurrentActorTokenAsControlled();
+    saveLastActorId(currentActor.id);
 }
 
 function setupContainer() {
@@ -267,18 +297,17 @@ function userInitialization() {
         let count = 0;
         const checkApiInterval = setInterval(() => {
             if (count % 10 === 0) {
-                ui.notifications.info("Sheet-Only: Waiting for actor to be initialized...");
+                ui.notifications.info(i18n("Sheet-Only.display-notifications.wait-init"));
             }
 
             const ownedActors = getOwnedActors();
 
             if (ownedActors && ownedActors.length > 0) {
-                ui.notifications.info("Sheet-Only: Found at least one owned actor");
-
+                ui.notifications.info(i18n("Sheet-Only.notifications.ownedActorFound"));
                 clearInterval(checkApiInterval);
                 resolve();
             } else if (count >= 500) {
-                ui.notifications.error("Could not initialize actor.");
+                ui.notifications.error(i18n("Sheet-Only.notifications.actorInitError"));
                 clearInterval(checkApiInterval);
                 reject(new Error("Could not initialize actor."));
             } else {
@@ -290,11 +319,26 @@ function userInitialization() {
 
 function popupSheet() {
     const ownedActors = getOwnedActors();
+    const lastActorId = getLastActorId();
 
+    // Attempt to open the last used actor
+    if (lastActorId) {
+        const lastActor = game.actors.get(lastActorId);
+        const actorIsOwned = ownedActors.some(actor => actor.id === lastActorId);
+
+        if (lastActor && actorIsOwned) {
+            switchToActor(lastActor);
+            return; // Exit the function if the last actor was successfully loaded
+        } else {
+            console.log("The saved actor could not be found, opening the first actor.");
+        }
+    }
+
+    // Open the first actor in the list if no saved actor was found or could not be loaded
     if (ownedActors?.length > 0) {
         switchToActor(ownedActors[0]);
     } else {
-        console.error(`No actor for user found.`);
+        console.error("No actor for user found.");
     }
 }
 
@@ -307,8 +351,8 @@ function setCurrentActorTokenAsControlled() {
 }
 
 function onResize(event) {
-    if (!document.activeElement || document.activeElement.tagName.toLowerCase() !== 'input') {
-        // We do not want to resize if an input field was tapped. That would result in closing the virtual keyboard immediately
-        currentSheet?.render(true);
-    }
+    currentSheet?.element.css({
+        width: window.innerWidth,
+        height: window.innerHeight
+    });
 }

@@ -1,3 +1,23 @@
+# 1.1.14
+- Fixes minor issues
+- Rollout new buid. The last might be corrupt
+
+# 1.1.13
+- Fixes bug with sheet popping up when any actor gets deleted
+
+# 1.1.12
+- Adds german translation. Thanks to [Niclasp1501](https://github.com/Niclasp1501)
+ 
+# 1.1.11
+- Fixed a bug where dialogs popped up twice
+- Dnd5e: Using the new character sheet, clicking on a spell/item additionally opens the tooltip
+
+# 1.1.10
+- Fixes bug that closes virtual keyboard when trying to enter something
+- Modifies the height of the sheet to fit better on screen 
+- Changes styling of actor list. The last actor should now be fully visible
+- Moves the edit slider for dnd5e's new character sheet from the header to the sheet itself so that the character sheet can now be edited
+
 # 1.1.9
 - Fixes bug that closes virtual keyboard when trying to enter something
 - Adds compatibility with sheet-only-plus journals 
